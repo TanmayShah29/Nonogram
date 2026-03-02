@@ -57,7 +57,8 @@ export default function ShareScreen({ onBack }: ShareScreenProps) {
         // Re-generate URL when caption or password changes
         const newData = { ...puzzleData, title: caption || 'Can you guess what this is? 👀', pw: password || null };
         const encoded = encodePuzzle(newData);
-        const newUrl = `${window.location.origin}/play/${newData.id}?p=${encoded}`;
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
+        const newUrl = `${baseUrl}/play/${newData.id}?p=${encoded}`;
         setUrl(newUrl);
     }, [caption, password, puzzleData]);
 
