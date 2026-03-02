@@ -29,7 +29,7 @@ export default function SkeletonGrid({ cols, rows }: SkeletonGridProps) {
 
                         {/* Grid Skeleton */}
                         <div
-                            className="inline-grid gap-[1px] bg-[#ede8e1] border border-[#ede8e1]"
+                            className="inline-grid gap-[1px] bg-[#ede8e1] border-[2px] border-[#b0a89e]"
                             style={{
                                 gridTemplateColumns: `repeat(${cols}, 24px)`,
                                 gridTemplateRows: `repeat(${rows}, 24px)`

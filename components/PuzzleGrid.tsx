@@ -180,7 +180,7 @@ export default function PuzzleGrid({ puzzleData, playerGrid, activeTool, onApply
         <div className="flex-1 overflow-auto touch-pan-x touch-pan-y flex justify-center items-start p-[16px_16px_calc(100px+env(safe-area-inset-bottom,0px))]" id="puzzleScrollWrap">
             <div
                 ref={wrapRef}
-                className={`bg-white p-0 inline-block origin-top-left border-2 border-[#b0a89e] ${isDragging.current ? 'touch-none' : ''}`}
+                className={`bg-white p-0 inline-block origin-top-left border-[3px] border-[#b0a89e] shadow-[0_8px_32px_rgba(0,0,0,0.12)] ${isDragging.current ? 'touch-none' : ''}`}
                 style={{ transform: `scale(${currentZoom})` }}
                 onContextMenu={e => e.preventDefault()}
             >
@@ -188,12 +188,12 @@ export default function PuzzleGrid({ puzzleData, playerGrid, activeTool, onApply
 
                     {/* Corner */}
                     <div
-                        className="bg-[#eeebe5] border-r-[2px] border-b-[2px] border-[#b0a89e]"
+                        className="bg-[#eeebe5] border-r-[3px] border-b-[3px] border-[#b0a89e]"
                         style={{ width: dimensions.W, height: dimensions.H, opacity: isRevealed ? 0.1 : 1 }}
                     />
 
                     {/* Column Header */}
-                    <div className="flex bg-[#eeebe5] border-b-[2px] border-[#b0a89e] items-end" style={{ height: dimensions.H, opacity: isRevealed ? 0.1 : 1 }}>
+                    <div className="flex bg-[#eeebe5] border-b-[3px] border-[#b0a89e] items-end" style={{ height: dimensions.H, opacity: isRevealed ? 0.1 : 1 }}>
                         {colClues.map((clue, c) => {
                             const isHint = hintCell?.type === 'col' && hintCell.index === c;
                             return (
@@ -203,7 +203,7 @@ export default function PuzzleGrid({ puzzleData, playerGrid, activeTool, onApply
                                     style={{
                                         width: dimensions.CLW,
                                         height: dimensions.H,
-                                        borderRight: ((c + 1) % 5 === 0 && c < cols - 1) ? '2px solid #b0a89e' : '1px solid #d4cdc5',
+                                        borderRight: ((c + 1) % 5 === 0 && c < cols - 1) ? '3px solid #b0a89e' : '1px solid #d4cdc5',
                                         background: isHint ? 'rgba(248, 223, 112, 0.6)' : 'transparent'
                                     }}
                                 >
@@ -218,7 +218,7 @@ export default function PuzzleGrid({ puzzleData, playerGrid, activeTool, onApply
                     </div>
 
                     {/* Row Header */}
-                    <div className="flex flex-col bg-[#eeebe5] border-r-[2px] border-[#b0a89e]" style={{ width: dimensions.W, opacity: isRevealed ? 0.1 : 1 }}>
+                    <div className="flex flex-col bg-[#eeebe5] border-r-[3px] border-[#b0a89e]" style={{ width: dimensions.W, opacity: isRevealed ? 0.1 : 1 }}>
                         {rowClues.map((clue, r) => {
                             const isHint = hintCell?.type === 'row' && hintCell.index === r;
                             return (
@@ -228,7 +228,7 @@ export default function PuzzleGrid({ puzzleData, playerGrid, activeTool, onApply
                                     style={{
                                         height: dimensions.CS,
                                         width: dimensions.W,
-                                        borderBottom: ((r + 1) % 5 === 0 && r < rows - 1) ? '2px solid #b0a89e' : '1px solid #d4cdc5',
+                                        borderBottom: ((r + 1) % 5 === 0 && r < rows - 1) ? '3px solid #b0a89e' : '1px solid #d4cdc5',
                                         background: isHint ? 'rgba(248, 223, 112, 0.6)' : 'transparent'
                                     }}
                                 >

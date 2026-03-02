@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import PuzzlePlayer from '@/components/PuzzlePlayer';
+import { Button } from '@/components/ui/Button';
 import { useRouter } from 'next/navigation';
 import { decodePuzzle } from '@/lib/puzzleEncoder';
 import SkeletonGrid from '@/components/SkeletonGrid';
@@ -72,36 +73,40 @@ export default function PlayClient({ id, encoded }: PlayClientProps) {
     if (requiresPassword) {
         return (
             <div className="flex flex-col h-full bg-[#faf7f2] fixed inset-0 z-[100] items-center justify-center p-5 pb-[calc(20px+env(safe-area-inset-bottom,0px))]">
-                <div className="bg-white rounded-[20px] shadow-[0_4px_32px_rgba(0,0,0,.1)] w-full max-w-[400px] p-[32px] flex flex-col items-center gap-4 text-center animate-in fade-in zoom-in duration-300">
-                    <div className="text-[32px] mb-2 leading-none">🔒</div>
-                    <h2 className="font-serif italic font-semibold text-[24px] text-text leading-tight w-full truncate px-4">
-                        {puzzleData.title || 'A puzzle is waiting for you'}
-                    </h2>
-                    <p className="text-[15px] text-body -mt-2">This puzzle is password protected</p>
+                <div className="bg-white rounded-[24px] shadow-[0_12px_48px_rgba(0,0,0,0.12)] w-full max-w-[380px] p-[40px_32px] flex flex-col items-center gap-5 text-center animate-in fade-in zoom-in duration-500">
+                    <div className="text-[40px] mb-2 leading-none">🔒</div>
+                    <div className="w-full flex flex-col gap-1.5">
+                        <h2 className="font-serif italic font-semibold text-[24px] text-text leading-tight truncate px-2">
+                            {puzzleData.title || 'Private Puzzle'}
+                        </h2>
+                        <p className="text-[14px] text-body opacity-80 uppercase tracking-widest font-mono">Password Required</p>
+                    </div>
 
                     <div className="flex flex-col gap-2 mt-2 w-full">
                         <input
                             type="password"
-                            placeholder="Enter password"
+                            placeholder="••••••"
                             value={passwordInput}
                             onChange={(e) => {
                                 setPasswordInput(e.target.value);
                                 setPasswordError(false);
                             }}
                             onKeyDown={(e) => { if (e.key === 'Enter') handlePasswordSubmit(); }}
-                            className={`font-sans text-[16px] text-center text-text border-[1.5px] border-solid p-[12px] rounded-[10px] w-full bg-transparent min-h-[48px] outline-none transition-colors ${passwordError ? 'border-err' : 'border-bdr focus:border-terra'} ${passwordShake ? 'shake' : ''}`}
+                            className={`font-mono text-[18px] text-center text-text border-2 border-solid p-[14px] rounded-[14px] w-full bg-[#fcfbf9] outline-none transition-all ${passwordError ? 'border-err bg-err/5' : 'border-bdr focus:border-terra focus:bg-white'} ${passwordShake ? 'animate-shake' : ''}`}
                             autoFocus
                         />
                         {passwordError && (
-                            <div className="text-err text-[13px] text-center font-mono animate-in shake duration-300">Wrong password — try again</div>
+                            <div className="text-err text-[13px] text-center font-mono font-bold">Incorrect password</div>
                         )}
                     </div>
-                    <button
+                    <Button
+                        variant="terra"
+                        size="full"
                         onClick={handlePasswordSubmit}
-                        className="font-mono text-[15px] min-h-[48px] rounded-[10px] px-[20px] w-full bg-[#f4845f] hover:bg-[#e06a43] text-white font-medium cursor-pointer transition-colors border-none mt-2 active:scale-95 inline-flex items-center justify-center"
+                        className="mt-2"
                     >
                         Unlock Puzzle →
-                    </button>
+                    </Button>
                 </div>
                 <button onClick={() => router.push('/')} className="bg-transparent border-none text-muted font-mono text-[14px] cursor-pointer py-2 hover:text-terra mt-6">
                     ← Back to start

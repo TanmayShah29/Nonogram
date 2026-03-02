@@ -1,6 +1,5 @@
 'use client';
-/* eslint-disable */
-import React, { useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from './ui/Button';
 import { PuzzleData } from '@/lib/puzzleEncoder';
 
@@ -10,34 +9,46 @@ interface RevealAnimationProps {
     puzzleData: PuzzleData;
     timeStr: string;
     onClose: () => void;
-    onShareResult: () => void;
-    onSaveImage: () => void; // Using the canvas drawing magic
+    onShareResult?: () => void;
+    onSaveImage?: () => void; // Using the canvas drawing magic
+    isCreatorMode?: boolean;
+    timerSec?: number;
 }
 
-export default function RevealAnimation({ puzzleData, timeStr, onClose, onShareResult, onSaveImage }: RevealAnimationProps) {
-    const confettiPieces = useMemo(() =>
-        Array.from({ length: 80 }, (_, i) => ({
-            id: i,
-            left: Math.random() * 100,
-            top: -10 - Math.random() * 10,
-            delay: Math.random() * 2.5,
-            duration: 2.5 + Math.random() * 2,
-            rotation: Math.random() * 360,
-            rotationSpeed: (Math.random() - 0.5) * 720,
-            color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
-            width: 6 + Math.random() * 8,
-            height: 8 + Math.random() * 6,
-            xDrift: (Math.random() - 0.5) * 200,
-        }))
-        , []);
+const getCreatorMessage = (secs: number) => {
+    if (secs < 120) return "Nice and breezy — perfect for a quick challenge ☀️";
+    if (secs < 300) return "That's a fun puzzle! Your friends will love it 🎉";
+    if (secs < 600) return "Tricky one! Only your smartest friends will crack this 🧠";
+    return "Fiendishly hard — prepare for some panicked messages 😅";
+}
+
+export default function RevealAnimation({ puzzleData, timeStr, onClose, onShareResult, onSaveImage, isCreatorMode, timerSec }: RevealAnimationProps) {
+    const [confetti, setConfetti] = useState<{ id: number; left: number; top: number; delay: number; duration: number; rotation: number; rotationSpeed: number; color: string; width: number; height: number; xDrift: number; }[]>([]);
+
+    useEffect(() => {
+        setConfetti(
+            Array.from({ length: 80 }, (_, i) => ({
+                id: i,
+                left: Math.random() * 100,
+                top: -10 - Math.random() * 10,
+                delay: Math.random() * 2.5,
+                duration: 2.5 + Math.random() * 2,
+                rotation: Math.random() * 360,
+                rotationSpeed: (Math.random() - 0.5) * 720,
+                color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+                width: 6 + Math.random() * 8,
+                height: 8 + Math.random() * 6,
+                xDrift: (Math.random() - 0.5) * 200,
+            }))
+        );
+    }, []);
 
     return (
         <div className="fixed inset-0 z-[500] bg-[#faf7f2]/50 backdrop-blur-[4px] flex items-end" onClick={(e) => {
             if (e.target === e.currentTarget) onClose();
         }}>
-            {/* Confetti */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden h-[120vh]">
-                {confettiPieces.map((piece) => (
+                {confetti.map((piece: any) => (
                     <div
                         key={piece.id}
                         className="absolute rounded-[2px]"
@@ -57,14 +68,19 @@ export default function RevealAnimation({ puzzleData, timeStr, onClose, onShareR
                 ))}
             </div>
 
-            <div className="bg-white rounded-t-[24px] shadow-[0_-8px_60px_rgba(0,0,0,0.12)] p-[12px_24px_calc(24px+env(safe-area-inset-bottom,0px))] w-full max-w-[540px] mx-auto animate-[sheetUp_0.4s_cubic-bezier(.22,1,.36,1)] z-10">
+            <div className="bg-white rounded-t-[24px] shadow-[0_-8px_60px_rgba(0,0,0,0.15)] p-[12px_24px_calc(32px+env(safe-area-inset-bottom,0px))] w-full max-w-[540px] mx-auto animate-[sheetUp_0.4s_cubic-bezier(.22,1,.36,1)] z-10">
                 <div className="w-[36px] h-[4px] bg-bdr rounded-[4px] mx-auto mb-[20px]" />
-                <h2 className="font-serif italic text-[clamp(20px,5vw,28px)] text-text mb-[4px]">
-                    Solved in {timeStr} ✦
+                <h2 className="font-serif italic text-[clamp(20px,5vw,28px)] text-text mb-[4px] text-center">
+                    {isCreatorMode ? `Your puzzle takes about ${timeStr} to solve ✦` : `Solved in ${timeStr} ✦`}
                 </h2>
-                <div className="text-[14px] text-body flex items-baseline justify-between mb-[18px]">
-                    <span>{puzzleData.title || ''}</span>
-                    <span className="font-mono text-[12px] text-muted bg-bg px-2 py-0.5 rounded-full border border-bdr shrink-0">
+                {isCreatorMode && timerSec !== undefined && (
+                    <p className="text-[14px] text-body mb-[20px] text-center italic">
+                        {getCreatorMessage(timerSec)}
+                    </p>
+                )}
+                <div className="text-[14px] text-body flex items-baseline justify-between mb-[20px] mt-[10px]">
+                    <span className="truncate pr-4">{puzzleData.title || ''}</span>
+                    <span className="font-mono text-[11px] font-bold text-muted bg-bg px-2.5 py-0.5 rounded-full border border-bdr shrink-0">
                         {puzzleData.cols} × {puzzleData.rows}
                     </span>
                 </div>
@@ -77,17 +93,34 @@ export default function RevealAnimation({ puzzleData, timeStr, onClose, onShareR
                 )}
 
                 <div className="flex flex-col gap-[10px]">
-                    <Button variant="terra" size="full" onClick={onShareResult}>
-                        Share Result
-                    </Button>
-                    <div className="flex gap-[10px]">
-                        <Button variant="outline" className="flex-1" onClick={onSaveImage}>
-                            Save Image
+                    {isCreatorMode ? (
+                        <Button variant="terra" size="full" onClick={onClose}>
+                            ← Back to Share
                         </Button>
-                        <Button variant="ghost" className="flex-1" onClick={onClose}>
-                            Play Another
-                        </Button>
-                    </div>
+                    ) : (
+                        <>
+                            {onShareResult && (
+                                <Button variant="terra" size="full" onClick={onShareResult}>
+                                    Share Result
+                                </Button>
+                            )}
+                            <div className="flex gap-[10px]">
+                                {onSaveImage && (
+                                    <Button variant="outline" className="flex-1" onClick={onSaveImage}>
+                                        Save Image
+                                    </Button>
+                                )}
+                                <Button variant="ghost" className="flex-1" onClick={onClose}>
+                                    Play Another
+                                </Button>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* Credits */}
+                <div className="text-center font-sans text-[12px] text-[#b0a89e] mt-[16px]">
+                    Made with Revelio · Created by Tanmay Shah
                 </div>
             </div>
 

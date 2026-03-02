@@ -256,7 +256,7 @@ export default function Landing({ }: LandingProps) {
                             </div>
 
                             {/* Grid */}
-                            <div className="inline-grid gap-[3px]" style={{ gridTemplateColumns: `repeat(5, 28px)` }}>
+                            <div className="inline-grid gap-[3px] select-none" style={{ gridTemplateColumns: `repeat(5, 28px)` }}>
                                 {demoCells.flat().map((val, i) => (
                                     <div
                                         key={i}
@@ -279,10 +279,10 @@ export default function Landing({ }: LandingProps) {
 
                 {/* Hero Text */}
                 <div className="flex flex-col items-center text-center gap-3.5 w-full md:items-start md:text-left md:order-1 relative">
-                    <h1 className="font-serif italic font-semibold text-[clamp(42px,10vw,64px)] leading-tight text-[#f4845f] max-w-[420px]">
+                    <h1 className="font-serif italic font-semibold text-[clamp(48px,12vw,72px)] leading-[0.9] text-[#f4845f] max-w-[420px] tracking-tight">
                         Revelio
                     </h1>
-                    <p className="text-[18px] text-[#2d2d2d] font-sans leading-relaxed max-w-[380px] -mt-2">
+                    <p className="text-[16px] md:text-[18px] text-[#2d2d2d] font-sans leading-relaxed max-w-[340px] md:max-w-[380px] -mt-1 opacity-90">
                         Hide a photo in a puzzle. Share it. Let them solve it.
                     </p>
 
@@ -304,9 +304,9 @@ export default function Landing({ }: LandingProps) {
             </div>
 
             {/* Examples Section */}
-            <div className="w-full pt-10 pb-0 pl-5 overflow-hidden md:py-10 md:px-5 mt-4 md:mt-10">
-                <div className="font-serif italic text-[1.3rem] text-text mb-3.5 pr-5">Try a demo puzzle ✦</div>
-                <div className="flex gap-3.5 overflow-x-auto snap-x snap-mandatory pb-3 pr-5 -webkit-overflow-scrolling-touch md:flex-wrap md:overflow-visible no-scrollbar">
+            <div className="w-full pt-10 pb-0 pl-5 md:px-5 mt-4 md:mt-12">
+                <div className="font-serif italic text-[1.4rem] text-text mb-5 pr-5">Try a demo puzzle ✦</div>
+                <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-8 pr-8 -webkit-overflow-scrolling-touch md:grid md:grid-cols-3 md:gap-6 md:pb-0 md:pr-0 no-scrollbar">
                     {DEMOS.map(demo => {
                         // Pre-render miniature canvas for the demo card manually via data uri or just simple divs
                         // Since it's N=14, computing CSS grid for the thumbnail is easy and faster than canvas.
@@ -341,6 +341,11 @@ export default function Landing({ }: LandingProps) {
                         );
                     })}
                 </div>
+            </div>
+
+            {/* Credits Section */}
+            <div className="mt-12 mb-8 text-center text-[18px] text-[#6b6560] font-serif italic">
+                Created by Tanmay Shah
             </div>
 
             <style jsx>{`

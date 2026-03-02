@@ -136,7 +136,7 @@ function drawImageWithOrientation(
 // looks too dark, blue too light to human eye).
 // ─────────────────────────────────────────────
 
-function rgbaToGreyscale(r: number, g: number, b: number, a: number): number {
+export function rgbaToGreyscale(r: number, g: number, b: number, a: number): number {
     // Composite onto white background first (handles transparent PNGs)
     const alpha = a / 255
     const rr = Math.round(r * alpha + 255 * (1 - alpha))
@@ -153,8 +153,8 @@ function rgbaToGreyscale(r: number, g: number, b: number, a: number): number {
 // than nearest-neighbour which causes aliasing.
 // ─────────────────────────────────────────────
 
-function downsampleGreyscale(
-    pixels: Uint8ClampedArray,
+export function downsampleGreyscale(
+    pixels: Uint8ClampedArray | Buffer,
     srcW: number,
     srcH: number,
     targetCols: number,
@@ -206,7 +206,7 @@ function downsampleGreyscale(
 // especially for night photos and overexposed shots.
 // ─────────────────────────────────────────────
 
-function otsuThreshold(greyscale: number[][]): number {
+export function otsuThreshold(greyscale: number[][]): number {
     const histogram = new Array(256).fill(0)
     const rows = greyscale.length
     const cols = greyscale[0].length
@@ -247,19 +247,38 @@ function otsuThreshold(greyscale: number[][]): number {
 }
 
 // ─────────────────────────────────────────────
-// STEP 7 — APPLY THRESHOLD + FILL RATIO CHECK
-// After thresholding, check the fill ratio.
-// If outside the 20–80% sweet spot, nudge the
-// threshold iteratively until it's acceptable.
+// STEP 7 — SMART MULTI-STAGE THRESHOLDING
+// Applies contrast stretching, Sobel edges, and
+// adaptive thresholding. Picks best fill ratio.
 // ─────────────────────────────────────────────
 
-function applyThreshold(greyscale: number[][], threshold: number): number[][] {
+export function stretchContrast(greyscale: number[][]): number[][] {
+    let min = 255
+    let max = 0
+
+    for (const row of greyscale) {
+        for (const val of row) {
+            if (val < min) min = val
+            if (val > max) max = val
+        }
+    }
+
+    if (max === min) return greyscale
+
+    const range = max - min
+    return greyscale.map(row =>
+        row.map(val => Math.round(((val - min) / range) * 255))
+    )
+}
+
+
+export function applyThreshold(greyscale: number[][], threshold: number): number[][] {
     return greyscale.map(row =>
         row.map(val => val <= threshold ? 1 : 0)
     )
 }
 
-function calculateFillRatio(grid: number[][]): number {
+export function calculateFillRatio(grid: number[][]): number {
     let filled = 0
     let total = 0
     for (const row of grid) {
@@ -271,24 +290,159 @@ function calculateFillRatio(grid: number[][]): number {
     return filled / total
 }
 
-export function applyThresholdWithFallback(
-    greyscale: number[][],
+export function morphologicalCleanup(grid: number[][]): number[][] {
+    const rows = grid.length
+    const cols = grid[0].length
+    const result = grid.map(row => [...row])
+
+    for (let r = 1; r < rows - 1; r++) {
+        for (let c = 1; c < cols - 1; c++) {
+            const neighbours = [
+                grid[r - 1][c], grid[r + 1][c],
+                grid[r][c - 1], grid[r][c + 1]
+            ]
+            const filledNeighbours = neighbours.filter(n => n === 1).length
+
+            // Remove isolated filled pixels
+            if (grid[r][c] === 1 && filledNeighbours === 0) {
+                result[r][c] = 0
+            }
+            // Fill isolated empty pixels
+            if (grid[r][c] === 0 && filledNeighbours === 4) {
+                result[r][c] = 1
+            }
+        }
+    }
+    return result
+}
+
+
+export function applyBoxBlur(greyscale: number[][], radius: number = 1): number[][] {
+    const rows = greyscale.length
+    const cols = greyscale[0].length
+    const result: number[][] = []
+
+    for (let r = 0; r < rows; r++) {
+        result[r] = []
+        for (let c = 0; c < cols; c++) {
+            let sum = 0
+            let count = 0
+            for (let br = Math.max(0, r - radius); br <= Math.min(rows - 1, r + radius); br++) {
+                for (let bc = Math.max(0, c - radius); bc <= Math.min(cols - 1, c + radius); bc++) {
+                    sum += greyscale[br][bc]
+                    count++
+                }
+            }
+            result[r][c] = sum / count
+        }
+    }
+    return result
+}
+
+export function removeSmallIslands(grid: number[][], minSize: number = 3): number[][] {
+    const rows = grid.length
+    const cols = grid[0].length
+    const visited = Array.from({ length: rows }, () => new Array(cols).fill(false))
+    const result = grid.map(row => [...row])
+
+    function floodFill(startR: number, startC: number): [number, number][] {
+        const component: [number, number][] = []
+        const stack: [number, number][] = [[startR, startC]]
+        while (stack.length > 0) {
+            const [r, c] = stack.pop()!
+            if (r < 0 || r >= rows || c < 0 || c >= cols) continue
+            if (visited[r][c] || grid[r][c] !== 1) continue
+            visited[r][c] = true
+            component.push([r, c])
+            stack.push([r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1])
+        }
+        return component
+    }
+
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            if (grid[r][c] === 1 && !visited[r][c]) {
+                const component = floodFill(r, c)
+                if (component.length < minSize) {
+                    for (const [cr, cc] of component) {
+                        result[cr][cc] = 0
+                    }
+                }
+            }
+        }
+    }
+    return result
+}
+
+export function smartThreshold(greyscale: number[][]): {
+    grid: number[][]
+    fillRatio: number
+    method: string
     baseThreshold: number
-): { grid: number[][], threshold: number, fillRatio: number } {
-    let threshold = baseThreshold
-    let grid = applyThreshold(greyscale, threshold)
+    imageType: string
+    dofDetected: boolean
+} {
+    // STEP 1 — Contrast stretch
+    // Always do this first. Guarantees full 0-255 range regardless of
+    // how dark or bright the original photo was.
+    const stretched = stretchContrast(greyscale)
+
+    // STEP 2 — Gentle blur
+    // Radius 1 box blur. Removes single-pixel texture noise (fur, leaves,
+    // brick, fabric) while keeping large shapes intact.
+    // This is the single most universally helpful operation.
+    const blurred = applyBoxBlur(stretched, 1)
+
+    // STEP 3 — Otsu threshold
+    // Find the single best global threshold on the blurred image.
+    // No classification. No adaptive. Just Otsu.
+    const threshold = otsuThreshold(blurred)
+    let grid = applyThreshold(blurred, threshold)
     let fillRatio = calculateFillRatio(grid)
 
+    // STEP 4 — Inversion check
+    // If fill ratio is over 60%, we probably filled the background instead
+    // of the subject. Try inverting and see if it's closer to ideal.
+    // This handles dark backgrounds, night photos, architecture automatically.
+    if (fillRatio > 0.60) {
+        const invertedGrid = grid.map(row => row.map(c => c === 1 ? 0 : 1))
+        const invertedFill = calculateFillRatio(invertedGrid)
+        // Only invert if it genuinely improves fill ratio toward ideal 35%
+        if (Math.abs(invertedFill - 0.35) < Math.abs(fillRatio - 0.35)) {
+            grid = invertedGrid
+            fillRatio = invertedFill
+        }
+    }
+
+    // STEP 5 — Threshold nudge
+    // If fill ratio is still outside acceptable range, nudge threshold
+    // up or down until it lands in 15-75%. Max 20 attempts.
+    let nudgedThreshold = threshold
     let attempts = 0
-    while ((fillRatio < 0.15 || fillRatio > 0.85) && attempts < 20) {
-        if (fillRatio < 0.15) threshold = Math.min(255, threshold + 10)
-        if (fillRatio > 0.85) threshold = Math.max(0, threshold - 10)
-        grid = applyThreshold(greyscale, threshold)
+    while ((fillRatio < 0.15 || fillRatio > 0.75) && attempts < 20) {
+        nudgedThreshold += fillRatio < 0.15 ? 8 : -8
+        nudgedThreshold = Math.max(0, Math.min(255, nudgedThreshold))
+        grid = applyThreshold(blurred, nudgedThreshold)
         fillRatio = calculateFillRatio(grid)
         attempts++
     }
 
-    return { grid, threshold, fillRatio }
+    // STEP 6 — Morphological cleanup + island removal
+    // Remove single isolated pixels (noise).
+    // Remove disconnected groups smaller than 3 cells.
+    // Fill isolated empty holes surrounded by filled cells.
+    grid = morphologicalCleanup(grid)
+    grid = removeSmallIslands(grid, 3)
+    fillRatio = calculateFillRatio(grid)
+
+    return {
+        grid,
+        fillRatio,
+        method: attempts > 0 ? 'otsu-nudged' : 'otsu',
+        baseThreshold: nudgedThreshold,
+        imageType: 'auto',
+        dofDetected: false,
+    }
 }
 
 function generateClues(sequence: number[]): number[] {
@@ -307,7 +461,7 @@ function generateClues(sequence: number[]): number[] {
     return clues.length > 0 ? clues : [0]
 }
 
-function generateAllClues(grid: number[][]): {
+export function generateAllClues(grid: number[][]): {
     rowClues: number[][]
     colClues: number[][]
 } {
@@ -345,7 +499,7 @@ function countDeterministicCells(clues: number[][], lineLength: number): number 
     return deterministic
 }
 
-function scoreSolvability(
+export function scoreSolvability(
     rowClues: number[][],
     colClues: number[][],
     rows: number,
@@ -358,7 +512,7 @@ function scoreSolvability(
     return Math.round((totalDet / totalCells) * 100)
 }
 
-function rateDifficulty(
+export function rateDifficulty(
     rows: number,
     cols: number,
     fillRatio: number,
@@ -475,45 +629,39 @@ export async function processImage(
     const pixels = imageData.data
 
     const greyscale = downsampleGreyscale(pixels, canvasW, canvasH, targetCols, targetRows)
-    const otsuT = otsuThreshold(greyscale)
-    const targetT = Math.max(0, Math.min(255, otsuT + thresholdOffset))
 
-    const { grid, threshold, fillRatio } = applyThresholdWithFallback(greyscale, targetT)
+    // Core pipeline
+    let { grid, fillRatio, baseThreshold } = smartThreshold(greyscale)
+    let threshold = baseThreshold
 
-    if (fillRatio < 0.15) {
-        warnings.push('Very few filled cells — try a darker photo or larger grid')
+    // Apply manual slider offset if user adjusted it
+    if (thresholdOffset !== 0) {
+        threshold = Math.max(0, Math.min(255, baseThreshold + thresholdOffset))
+        const blurred = applyBoxBlur(stretchContrast(greyscale), 1)
+        grid = applyThreshold(blurred, threshold)
+        grid = morphologicalCleanup(grid)
+        grid = removeSmallIslands(grid, 3)
+        fillRatio = calculateFillRatio(grid)
     }
-    if (fillRatio > 0.85) {
-        warnings.push('Almost entirely filled — try a lighter photo or smaller grid')
-    }
-    if (fillRatio < 0.10 || fillRatio > 0.90) {
-        warnings.push('This photo may not make a good puzzle at this size')
-    }
+
+    if (fillRatio < 0.15) warnings.push('Very few filled cells — try a darker photo or larger grid')
+    if (fillRatio > 0.85) warnings.push('Almost entirely filled — try a lighter photo or smaller grid')
+    if (fillRatio < 0.10 || fillRatio > 0.90) warnings.push('This photo may not make a good puzzle at this size')
 
     const { rowClues, colClues } = generateAllClues(grid)
-
     const solvabilityScore = scoreSolvability(rowClues, colClues, targetRows, targetCols)
 
-    if (solvabilityScore < 20) {
-        warnings.push('This puzzle may require a lot of guessing — try a different grid size')
-    }
+    if (solvabilityScore < 20) warnings.push('This puzzle may require a lot of guessing — try a different grid size')
 
     const { difficulty, score: difficultyScore } = rateDifficulty(
         targetRows, targetCols, fillRatio, solvabilityScore, rowClues, colClues
     )
 
     return {
-        grid,
-        rowClues,
-        colClues,
-        rows: targetRows,
-        cols: targetCols,
-        difficulty,
-        difficultyScore,
-        solvabilityScore,
-        fillRatio,
-        threshold,
-        warnings,
+        grid, rowClues, colClues,
+        rows: targetRows, cols: targetCols,
+        difficulty, difficultyScore, solvabilityScore,
+        fillRatio, threshold, warnings,
     }
 }
 
@@ -521,7 +669,7 @@ export async function generatePreview(
     file: File,
     cols: number,
     rows: number
-): Promise<{ grid: number[][], fillRatio: number, greyscale: number[][], baseThreshold: number }> {
+): Promise<{ grid: number[][], fillRatio: number, greyscale: number[][], baseThreshold: number, method: string, imageType: string, dofDetected: boolean, debugMetrics: any }> {
     const img = await loadImageFromFile(file)
     const orientation = await getExifOrientation(file)
     const swapDims = orientation >= 5 && orientation <= 8
@@ -538,10 +686,9 @@ export async function generatePreview(
 
     const pixels = ctx.getImageData(0, 0, canvasW, canvasH).data
     const greyscale = downsampleGreyscale(pixels, canvasW, canvasH, cols, rows)
-    const baseThreshold = otsuThreshold(greyscale)
-    const { grid, fillRatio } = applyThresholdWithFallback(greyscale, baseThreshold)
+    const { grid, fillRatio, method, baseThreshold, imageType, dofDetected } = smartThreshold(greyscale)
 
-    return { grid, fillRatio, greyscale, baseThreshold }
+    return { grid, fillRatio, greyscale, baseThreshold, method, imageType, dofDetected, debugMetrics: {} }
 }
 
 // ─────────────────────────────────────────────

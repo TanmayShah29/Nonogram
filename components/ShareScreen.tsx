@@ -23,6 +23,11 @@ export default function ShareScreen({ onBack }: ShareScreenProps) {
     const [isMobile, setIsMobile] = useState(false);
     const [mounted, setMounted] = useState(false);
     const [showPwaNudge, setShowPwaNudge] = useState(false);
+
+    // Play test state
+    const [playtested, setPlaytested] = useState(false);
+    const [solveTime, setSolveTime] = useState<string | null>(null);
+
     const qrCanvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
@@ -46,6 +51,12 @@ export default function ShareScreen({ onBack }: ShareScreenProps) {
                 setCaption(data.title);
                 setPassword(data.pw || '');
             }
+        }
+
+        const pt = sessionStorage.getItem('revelio_playtested');
+        if (pt === 'true') {
+            setPlaytested(true);
+            setSolveTime(sessionStorage.getItem('revelio_solve_time'));
         }
     }, []);
 
@@ -101,6 +112,12 @@ export default function ShareScreen({ onBack }: ShareScreenProps) {
         return <div className="flex h-full items-center justify-center font-mono text-muted">Loading puzzle...</div>;
     }
 
+    const handlePlayTest = () => {
+        sessionStorage.setItem('creatorPreview', 'true');
+        sessionStorage.setItem('creatorPreviewData', JSON.stringify(puzzleData));
+        router.push('/play/preview');
+    };
+
     return (
         <div className="flex flex-col items-center p-[20px_20px_calc(40px+env(safe-area-inset-bottom,0px))] gap-4 max-w-[720px] w-full mx-auto">
             <h1 className="font-serif italic font-semibold text-[clamp(22px,5vw,32px)] text-text text-center">
@@ -119,12 +136,21 @@ export default function ShareScreen({ onBack }: ShareScreenProps) {
                     </div>
                 )}
 
-                {/* Teaser Image (Blurred via CSS or already blurred via canvas data URL) */}
-                <img
-                    src={puzzleData.thumb}
-                    className="block w-full h-[200px] object-cover [image-rendering:pixelated] blur-[4px] brightness-105"
-                    alt="Hidden Puzzle"
-                />
+                {/* Teaser Image */}
+                <div className="w-full aspect-video bg-[#f0ece6] overflow-hidden flex items-center justify-center relative">
+                    <img
+                        src={puzzleData.thumb}
+                        className="block w-full h-full object-cover [image-rendering:pixelated] blur-[6px] brightness-105 scale-110"
+                        alt="Hidden Puzzle"
+                    />
+                    {playtested && (
+                        <div className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-sm rounded-full px-2.5 py-1 flex items-center gap-1.5 shadow-sm z-10 border border-[#4caf88]/20 text-[#2e7d32]">
+                            <span className="text-[10px] font-mono font-bold uppercase tracking-wide">
+                                ✓ Play tested {solveTime ? `· ${solveTime}` : ''}
+                            </span>
+                        </div>
+                    )}
+                </div>
 
                 <div className="p-[16px_18px_18px] flex flex-col gap-3">
                     <input
@@ -132,7 +158,7 @@ export default function ShareScreen({ onBack }: ShareScreenProps) {
                         value={caption}
                         onChange={e => setCaption(e.target.value)}
                         placeholder="Can you guess what this is? 👀"
-                        className="font-caveat text-[20px] text-text border-none outline-none border-b-[1.5px] border-solid border-bdr pb-1.5 w-full bg-transparent min-h-[44px] focus:border-terra"
+                        className="font-caveat text-[22px] text-text border-none outline-none border-b-[1.5px] border-solid border-bdr pb-1 w-full bg-transparent min-h-[48px] focus:border-terra tracking-wide"
                     />
 
                     <div className="flex gap-2 flex-wrap">
@@ -161,6 +187,22 @@ export default function ShareScreen({ onBack }: ShareScreenProps) {
                         />
                     )}
                 </div>
+            </div>
+
+            {/* CREATOR PREVIEW BUTTON */}
+            <div className="w-full max-w-[440px] flex flex-col items-center gap-1.5 mb-2 mt-2">
+                <button
+                    onClick={handlePlayTest}
+                    className={`w-full h-[56px] rounded-[12px] border-[1.5px] border-solid flex items-center justify-center gap-2 font-mono font-bold text-[15px] transition-colors ${playtested
+                            ? 'bg-[#e8f5e9] border-[#4caf88] text-[#2e7d32]'
+                            : 'bg-white border-terra text-terra hover:bg-[#fff9f5]'
+                        }`}
+                >
+                    {playtested ? '✓ Played · Play again?' : '🎮 Play it first →'}
+                </button>
+                {!playtested && (
+                    <span className="text-[12px] text-muted font-sans italic">See how hard it is before you send it</span>
+                )}
             </div>
             <div className="font-mono text-[11px] text-muted max-w-[440px] text-center mb-1">
                 Puzzle ID: <span className="font-bold">#{puzzleData.id}</span>
@@ -208,15 +250,6 @@ export default function ShareScreen({ onBack }: ShareScreenProps) {
             ) : null}
 
             <div className="flex flex-col gap-2 w-full max-w-[440px] items-center mt-2">
-                <button
-                    onClick={() => {
-                        const encoded = encodePuzzle(puzzleData);
-                        router.push(`/play/${puzzleData.id}?p=${encoded}`);
-                    }}
-                    className="font-mono text-text bg-transparent border-none cursor-pointer py-2 px-4 hover:underline"
-                >
-                    Play it yourself
-                </button>
                 <div className="text-[12px] text-muted mt-2">
                     The photo stays hidden until they solve it · Link works for 30 days
                 </div>
@@ -242,9 +275,10 @@ export default function ShareScreen({ onBack }: ShareScreenProps) {
                                 setShowPwaNudge(false);
                                 localStorage.setItem('revelio_pwa_nudge_dismissed', 'true');
                             }}
-                            className="text-white/60 hover:text-white p-1"
+                            className="text-white/40 hover:text-white p-3 -mr-3 -mt-3 min-w-[48px] min-h-[48px] flex items-center justify-center"
+                            aria-label="Dismiss"
                         >
-                            ✕
+                            <span className="text-[18px]">✕</span>
                         </button>
                     </div>
                     <div className="bg-white/10 rounded-[12px] p-2.5 text-[11px] flex flex-col gap-1.5 opacity-90">

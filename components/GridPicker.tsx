@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Button } from './ui/Button';
 import { DIFF_COLORS, DIFF_NAMES } from '@/lib/utils';
 import { PuzzleData } from '@/lib/puzzleEncoder';
-import { suggestGridSizes, generatePreview, updateBestPick, processImage, resizeForStorage, GridOption as INGridOption, loadImageFromFile, applyThresholdWithFallback } from '@/lib/imageToNonogram';
+import { suggestGridSizes, generatePreview, updateBestPick, processImage, resizeForStorage, GridOption as INGridOption, loadImageFromFile, processPipelineFallback } from '@/lib/imageToNonogram';
 
 interface GridPickerProps {
     onBack: () => void;
@@ -13,6 +13,7 @@ type LocalGridOption = INGridOption & {
     previewGrid?: number[][];
     greyscale?: number[][];
     baseThreshold?: number;
+    method?: string;
 };
 
 export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
@@ -22,6 +23,7 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
     const [isGenerating, setIsGenerating] = useState<boolean>(false);
     const [previewSrc, setPreviewSrc] = useState<string>('');
     const puzzlePreviewCanvasRef = useRef<HTMLCanvasElement>(null);
+    const previewContainerRef = useRef<HTMLDivElement>(null);
     const [thresholdOffset, setThresholdOffset] = useState<number>(0);
 
     const baseOptionsRef = useRef<LocalGridOption[]>([]);
@@ -48,9 +50,9 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
             const loadedOpts: LocalGridOption[] = [];
 
             for (const opt of initialOpts) {
-                const { grid, fillRatio, greyscale, baseThreshold } = await generatePreview(file, opt.cols, opt.rows);
+                const { grid, fillRatio, greyscale, baseThreshold, method } = await generatePreview(file, opt.cols, opt.rows);
                 if (isCancelled) return;
-                loadedOpts.push({ ...opt, fillRatio, previewGrid: grid, greyscale, baseThreshold, thresholdOffset: 0 });
+                loadedOpts.push({ ...opt, fillRatio, previewGrid: grid, greyscale, baseThreshold, method, thresholdOffset: 0 });
             }
 
             const finalOpts = updateBestPick(loadedOpts);
@@ -70,9 +72,8 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
         if (baseOptionsRef.current.length === 0) return;
 
         const newOpts = baseOptionsRef.current.map(opt => {
-            if (!opt.greyscale || opt.baseThreshold === undefined) return opt;
-            const targetT = Math.max(0, Math.min(255, opt.baseThreshold + thresholdOffset));
-            const { grid, fillRatio } = applyThresholdWithFallback(opt.greyscale, targetT);
+            if (!opt.greyscale || opt.baseThreshold === undefined || !opt.method) return opt;
+            const { grid, fillRatio } = processPipelineFallback(opt.previewGrid!, opt.greyscale, opt.method, opt.baseThreshold, thresholdOffset);
 
             let warning = '';
             if (fillRatio < 0.15) warning = 'Very few filled cells — try a larger grid';
@@ -93,32 +94,48 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
     }, [selectedIdx, options]);
 
     const updatePreview = (opt: LocalGridOption) => {
-        if (!opt.previewGrid || !puzzlePreviewCanvasRef.current) return;
+        if (!opt.previewGrid || !puzzlePreviewCanvasRef.current || !previewContainerRef.current) return;
         const cv = puzzlePreviewCanvasRef.current;
-        cv.width = opt.cols;
-        cv.height = opt.rows;
+        const container = previewContainerRef.current;
 
-        const dispW = Math.round(Math.min(140, opt.cols * 6));
-        const dispH = Math.round(dispW * opt.rows / opt.cols);
-        cv.style.width = dispW + 'px';
-        cv.style.height = dispH + 'px';
+        const cardWidth = container.clientWidth;
+        const cardHeight = container.clientHeight;
 
-        const ctx = cv.getContext('2d');
-        if (ctx) {
-            const imgData = ctx.createImageData(opt.cols, opt.rows);
-            for (let r = 0; r < opt.rows; r++) {
-                for (let c = 0; c < opt.cols; c++) {
-                    const idx = (r * opt.cols + c) * 4;
-                    const val = opt.previewGrid[r][c] === 1 ? 45 : 255;
-                    imgData.data[idx] = val;
-                    imgData.data[idx + 1] = val;
-                    imgData.data[idx + 2] = val;
-                    imgData.data[idx + 3] = 255;
+        const CARD_INNER_WIDTH = cardWidth; // Padding is on the parent div
+        const CARD_INNER_HEIGHT = cardHeight;
+
+        const cellSize = Math.min(
+            Math.floor(CARD_INNER_WIDTH / opt.cols),
+            Math.floor(CARD_INNER_HEIGHT / opt.rows)
+        );
+
+        cv.width = cellSize * opt.cols;
+        cv.height = cellSize * opt.rows;
+
+        renderGridToCanvas(cv, opt.previewGrid, opt.cols, opt.rows, cellSize);
+    };
+
+    function renderGridToCanvas(canvas: HTMLCanvasElement, grid: number[][], cols: number, rows: number, cellSize: number) {
+        const ctx = canvas.getContext('2d')!;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#faf7f2';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                if (grid[r][c] === 1) {
+                    ctx.fillStyle = '#2d2d2d';
+                    ctx.fillRect(
+                        c * cellSize + 1,
+                        r * cellSize + 1,
+                        cellSize - 1,
+                        cellSize - 1
+                    );
                 }
             }
-            ctx.putImageData(imgData, 0, 0);
         }
-    };
+    }
 
     const handleSelect = (idx: number) => setSelectedIdx(idx);
 
@@ -161,16 +178,14 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
     const selectedOpt = options[selectedIdx];
 
     return (
-        <div className="flex flex-col items-center pt-4 px-5 pb-[calc(80px+0px)] gap-5 w-full mx-auto max-w-[720px]">
-            <div className="w-full flex">
-                <button onClick={onBack} className="bg-transparent border-none text-muted font-mono text-[14px] cursor-pointer py-2 inline-flex items-center hover:text-terra">
-                    ← Back
+        <div className="flex flex-col items-center pt-2 px-5 pb-[calc(100px+0px)] gap-4 w-full mx-auto max-w-[680px]">
+            <div className="w-full">
+                <button
+                    onClick={onBack}
+                    className="bg-transparent border-none text-muted font-mono text-[14px] cursor-pointer py-3 pr-4 -ml-2 inline-flex items-center hover:text-terra active:opacity-60 min-h-[44px]"
+                >
+                    <span className="mr-1 text-[18px]">←</span> Back
                 </button>
-            </div>
-
-            <div className="bg-white rounded-[14px] shadow-lg p-3 pb-2.5 w-full max-w-[340px] md:-rotate-1">
-                {previewSrc && <img src={previewSrc} className="block w-full rounded-[8px] object-cover max-h-[260px]" alt="Your photo" />}
-                <div className="font-mono text-[10px] text-muted text-center mt-1.5">{uploadedFile?.name || 'uploading...'}</div>
             </div>
 
             <h2 className="font-serif italic text-[clamp(18px,4vw,26px)] text-text text-center max-w-[480px] mt-2">
@@ -183,38 +198,48 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
                 </div>
             )}
 
-            <div className="grid grid-cols-2 gap-2.5 w-full max-w-[480px]">
-                <div className="flex flex-col items-center gap-1.5">
-                    <div className="font-mono text-[11px] text-muted bg-empty rounded-[20px] px-2.5 py-0.5">Original</div>
-                    <div className="bg-white rounded-DEFAULT shadow w-full aspect-square flex items-center justify-center overflow-hidden">
-                        {previewSrc && <img src={previewSrc} className="block w-full h-full max-h-[300px] object-contain" alt="Original" />}
+            <div className="flex flex-col sm:flex-row gap-4 w-full items-stretch">
+                <div className="flex-1 flex flex-col items-center gap-2">
+                    <div className="font-mono text-[11px] text-[#b0a89e] tracking-[0.08em] uppercase">ORIGINAL</div>
+                    <div className="bg-[#ffffff] rounded-[12px] shadow-[0_2px_12px_rgba(0,0,0,0.07)] p-4 w-full h-[240px] md:h-[360px] flex flex-col items-center justify-center overflow-hidden border border-[#ede8e1]">
+                        {previewSrc && <img src={previewSrc} className="block w-full h-full object-contain rounded-[8px]" alt="Original" />}
                     </div>
                 </div>
-                <div className="flex flex-col items-center gap-1.5">
-                    <div className="font-mono text-[11px] text-muted bg-empty rounded-[20px] px-2.5 py-0.5">Puzzle</div>
-                    <div className="bg-white rounded-DEFAULT shadow w-full aspect-square flex items-center justify-center overflow-hidden border border-[#ede8e1]">
-                        <canvas ref={puzzlePreviewCanvasRef} className="block w-auto h-auto max-w-full max-h-[300px] [image-rendering:pixelated]" />
+                <div className="flex-1 flex flex-col items-center gap-2">
+                    <div className="font-mono text-[11px] text-[#b0a89e] tracking-[0.08em] uppercase">PUZZLE PREVIEW</div>
+                    <div className="bg-[#ffffff] rounded-[12px] shadow-[0_2px_12px_rgba(0,0,0,0.07)] p-4 w-full h-[240px] md:h-[360px] flex flex-col items-center justify-center overflow-hidden border border-[#ede8e1]">
+                        <div className="w-full h-full flex flex-col items-center justify-center rounded-[8px] overflow-hidden" ref={previewContainerRef}>
+                            <canvas ref={puzzlePreviewCanvasRef} className="block mx-auto rounded-[8px]" style={{ imageRendering: 'pixelated' }} />
+                            {selectedOpt && process.env.NODE_ENV === 'development' && (
+                                <div style={{ fontSize: '10px', color: '#888', marginTop: '4px', flexShrink: 0 }}>
+                                    Fill: {((selectedOpt.fillRatio || 0) * 100).toFixed(1)}% · Method: {selectedOpt.method}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
 
             {/* Threshold Slider Container */}
-            <div className="flex flex-col items-center w-full max-w-[320px] mt-3">
-                <div className="flex justify-between w-full font-mono text-[11px] px-1 text-muted mb-2">
+            <div className="flex flex-col items-center w-full max-w-[320px] mt-3 px-1">
+                <div className="flex justify-between w-full font-mono text-[11px] text-muted mb-2 tracking-tight">
                     <span>Lighter ←</span>
+                    <span className="text-body font-bold">Contrast</span>
                     <span>→ Darker</span>
                 </div>
-                <input
-                    type="range"
-                    min="-50"
-                    max="50"
-                    value={thresholdOffset}
-                    onChange={e => setThresholdOffset(parseInt(e.target.value, 10))}
-                    className="w-full h-[6px] rounded-full bg-[#ede8e1] appearance-none focus:outline-none focus:ring-2 focus:ring-terra/30 accent-terra cursor-ew-resize"
-                />
+                <div className="w-full relative py-3 flex items-center">
+                    <input
+                        type="range"
+                        min="-50"
+                        max="50"
+                        value={thresholdOffset}
+                        onChange={e => setThresholdOffset(parseInt(e.target.value, 10))}
+                        className="w-full h-[6px] rounded-full bg-[#ede8e1] appearance-none focus:outline-none focus:ring-2 focus:ring-terra/30 accent-terra cursor-ew-resize slider-thumb-large"
+                    />
+                </div>
             </div>
 
-            <div className="flex flex-col md:flex-row md:flex-wrap md:justify-center gap-2 w-full max-w-[480px] md:max-w-none mb-6 mt-4">
+            <div className="flex flex-col md:flex-row md:flex-wrap md:justify-center gap-2 w-full max-w-[480px] md:max-w-[680px] mb-6 mt-4">
                 {options.map((opt, idx) => {
                     const isActive = idx === selectedIdx;
                     const isBest = opt.isBestPick;
@@ -224,7 +249,7 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
                             onClick={() => handleSelect(idx)}
                             className={`
                                 relative bg-white rounded-DEFAULT shadow flex items-center gap-3 p-[12px_14px] cursor-pointer border-l-4 transition-all duration-150 min-h-[72px] select-none active:scale-98
-                                md:flex-col md:text-center md:w-[130px] md:min-w-[130px] md:flex-none md:border-l-0 md:border-2 md:p-[14px_10px] md:min-h-0 md:rounded-lg
+                                md:flex-col md:text-center md:w-[124px] md:min-w-[124px] md:flex-none md:border-l-0 md:border-2 md:p-[14px_10px] md:min-h-0 md:rounded-lg
                                 ${isActive ? 'border-l-terra bg-[#fef8f5] md:border-terra md:-translate-y-1 md:shadow-[0_8px_24px_rgba(244,132,95,.18)]' : 'border-l-transparent md:border-transparent'}
                             `}
                         >

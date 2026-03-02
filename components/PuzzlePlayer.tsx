@@ -8,6 +8,7 @@ import { computeClues } from '@/lib/nonogram';
 
 interface PuzzlePlayerProps {
     puzzleData: PuzzleData;
+    isCreatorMode?: boolean;
     onBack: () => void;
 }
 
@@ -26,7 +27,7 @@ const safeRemove = (key: string) => {
 };
 
 
-export default function PuzzlePlayer({ puzzleData, onBack }: PuzzlePlayerProps) {
+export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: PuzzlePlayerProps) {
     const { cols, rows, rowClues, colClues, grid: answerGrid, id } = puzzleData;
 
     const [playerGrid, setPlayerGrid] = useState<number[][]>(() =>
@@ -67,7 +68,7 @@ export default function PuzzlePlayer({ puzzleData, onBack }: PuzzlePlayerProps) 
 
     useEffect(() => {
         // Load save - check if exists
-        if (id) {
+        if (id && !isCreatorMode) {
             const saved = localStorage.getItem(`nono_${id}`);
             if (saved) {
                 setShowRestorePrompt(true);
@@ -184,7 +185,7 @@ export default function PuzzlePlayer({ puzzleData, onBack }: PuzzlePlayerProps) 
         const prog = Math.min(100, Math.round((filledCount / (rows * cols)) * 100));
         setProgress(prog);
 
-        if (id && timerOn) {
+        if (id && timerOn && !isCreatorMode) {
             const saveObj = {
                 grid: playerGrid,
                 time: timerSec,
@@ -199,7 +200,13 @@ export default function PuzzlePlayer({ puzzleData, onBack }: PuzzlePlayerProps) 
         if (win && atLeastOneFilled && !hasRevealed.current) {
             hasRevealed.current = true;
             setTimerOn(false);
-            if (id) safeRemove(`nono_${id}`);
+            if (id && !isCreatorMode) safeRemove(`nono_${id}`);
+
+            if (isCreatorMode) {
+                sessionStorage.setItem('revelio_playtested', 'true');
+                sessionStorage.setItem('revelio_solve_time', formatTime(timerSec));
+            }
+
             setTimeout(() => {
                 setIsRevealed(true);
                 setTimeout(() => setShowWinSheet(true), 1600);
@@ -315,7 +322,7 @@ export default function PuzzlePlayer({ puzzleData, onBack }: PuzzlePlayerProps) 
         if (!window.confirm('Reveal the solution?')) return;
         setTimerOn(false);
         setIsGivingUp(true);
-        if (id) safeRemove(`nono_${id}`);
+        if (id && !isCreatorMode) safeRemove(`nono_${id}`);
 
         // Calculate stats
         let correct = 0, wrong = 0, missed = 0;
@@ -341,12 +348,31 @@ export default function PuzzlePlayer({ puzzleData, onBack }: PuzzlePlayerProps) 
 
     return (
         <div className="flex flex-col h-full bg-[#faf7f2] fixed inset-0 z-[100]">
+            {isCreatorMode && (
+                <div className="w-full h-[36px] bg-[#ffd93d] flex items-center justify-center relative shrink-0 pt-[env(safe-area-inset-top,0px)] box-content">
+                    <span className="font-sans text-[13px] font-bold text-black px-4 truncate max-w-[80%] md:max-w-none text-center">
+                        🎮 Creator Preview<span className="hidden md:inline"> — this is what your friend will see</span>
+                    </span>
+                    <button onClick={onBack} className="absolute right-0 top-[env(safe-area-inset-top,0px)] h-[36px] px-4 font-mono text-[12px] font-bold text-black/70 hover:text-black flex items-center transition-colors">
+                        ← Back to share
+                    </button>
+                </div>
+            )}
+
             {/* Topbar */}
-            <div className="flex items-center gap-3 p-[10px_20px] bg-white border-b border-solid border-bdr flex-wrap relative z-20">
-                <button onClick={onBack} className="bg-transparent border-none text-muted font-mono text-[14px] cursor-pointer py-2 inline-flex items-center hover:text-terra order-1 md:order-none mr-auto">
-                    ← Back
+            <div className="flex items-center gap-3 p-[10px_16px] bg-white border-b border-solid border-bdr flex-nowrap relative z-20 min-h-[56px]">
+                <button
+                    onClick={onBack}
+                    className="bg-transparent border-none text-muted font-mono text-[14px] cursor-pointer py-2 pr-3 -ml-1 inline-flex items-center hover:text-terra active:opacity-60 whitespace-nowrap shrink-0"
+                >
+                    <span className="mr-1">←</span> Back
                 </button>
-                <div id="timer" className="font-mono text-[15px] font-bold text-text whitespace-nowrap order-2 md:order-none md:ml-auto">
+
+                <h1 className="font-serif italic font-medium text-[16px] text-text truncate max-w-[40%] md:max-w-[300px]">
+                    {puzzleData.title}
+                </h1>
+
+                <div id="timer" className="font-mono text-[14px] font-bold text-text ml-auto tabular-nums bg-bg px-2.5 py-1 rounded-[6px] border border-bdr whitespace-nowrap">
                     {formatTime(timerSec)}
                 </div>
 
@@ -438,8 +464,15 @@ export default function PuzzlePlayer({ puzzleData, onBack }: PuzzlePlayerProps) 
                             <span className="animate-spin text-terra text-[18px]">◌</span>
                             Revealing Solution...
                         </div>
-                        {giveUpStats && (
-                            <div className="bg-white rounded-[20px] p-5 shadow-xl border border-bdr animate-in slide-in-from-bottom-4 duration-700 delay-500 max-w-[280px] w-full text-center">
+                        {isCreatorMode ? (
+                            <div className="bg-white rounded-[20px] p-5 shadow-xl border border-bdr animate-in slide-in-from-bottom-4 duration-700 delay-500 max-w-[280px] w-full text-center flex flex-col gap-4 mt-4">
+                                <p className="font-sans text-[15px] italic text-body">
+                                    Your friends will have to figure this out themselves 😈
+                                </p>
+                                <Button variant="terra" size="full" onClick={onBack}>← Back to Share</Button>
+                            </div>
+                        ) : giveUpStats && (
+                            <div className="bg-white rounded-[20px] p-5 shadow-xl border border-bdr animate-in slide-in-from-bottom-4 duration-700 delay-500 max-w-[280px] w-full text-center mt-4">
                                 <h4 className="font-serif italic text-[18px] mb-3">Better luck next time!</h4>
                                 <div className="grid grid-cols-3 gap-2">
                                     <div className="flex flex-col">
@@ -455,6 +488,7 @@ export default function PuzzlePlayer({ puzzleData, onBack }: PuzzlePlayerProps) 
                                         <span className="text-[10px] uppercase text-muted">Missed</span>
                                     </div>
                                 </div>
+                                <Button variant="ghost" size="full" onClick={onBack} className="mt-4">Back to home</Button>
                             </div>
                         )}
                     </div>
@@ -465,6 +499,8 @@ export default function PuzzlePlayer({ puzzleData, onBack }: PuzzlePlayerProps) 
                 <RevealAnimation
                     puzzleData={puzzleData}
                     timeStr={formatTime(timerSec)}
+                    isCreatorMode={isCreatorMode}
+                    timerSec={timerSec}
                     onClose={onBack}
                     onShareResult={() => {
                         const text = `I solved the Revelio puzzle "${puzzleData.title}" in ${formatTime(timerSec)}!\n${location.href}`;

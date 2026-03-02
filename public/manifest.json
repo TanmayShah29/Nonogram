@@ -1,7 +1,7 @@
 {
     "name": "Revelio",
     "short_name": "Revelio",
-    "description": "Hide a photo in a puzzle",
+    "description": "Hide a photo in a puzzle. Share it. Let them solve it.",
     "start_url": "/",
     "display": "standalone",
     "orientation": "portrait",
