@@ -9,7 +9,6 @@ import {
     downsampleGreyscale,
     otsuThreshold,
     smartThreshold,
-    processPipelineFallback,
     generateAllClues,
     scoreSolvability,
     rateDifficulty
@@ -78,9 +77,9 @@ async function runTests() {
 
         for (const opt of options) {
             const greyscale = downsampleGreyscale(pixels, width, height, opt.cols, opt.rows);
-            const { grid: initialGrid, method, baseThreshold: otsuT } = smartThreshold(greyscale);
+            const { grid: initialGrid, baseThreshold: otsuT } = smartThreshold(greyscale);
             currentOtsu = otsuT;
-            const { grid, fillRatio, threshold } = processPipelineFallback(initialGrid, greyscale, method, otsuT, 0);
+            const { grid, fillRatio } = smartThreshold(greyscale);
             const { rowClues, colClues } = generateAllClues(grid);
             const solvability = scoreSolvability(rowClues, colClues, opt.rows, opt.cols);
 

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Button } from './ui/Button';
 import { DIFF_COLORS, DIFF_NAMES } from '@/lib/utils';
 import { PuzzleData } from '@/lib/puzzleEncoder';
-import { suggestGridSizes, generatePreview, updateBestPick, processImage, resizeForStorage, GridOption as INGridOption, loadImageFromFile, processPipelineFallback } from '@/lib/imageToNonogram';
+import { suggestGridSizes, generatePreview, updateBestPick, processImage, resizeForStorage, GridOption as INGridOption, loadImageFromFile, applyBoxBlur, stretchContrast, applyThreshold, morphologicalCleanup, removeSmallIslands, calculateFillRatio } from '@/lib/imageToNonogram';
 
 interface GridPickerProps {
     onBack: () => void;
@@ -73,7 +73,18 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
 
         const newOpts = baseOptionsRef.current.map(opt => {
             if (!opt.greyscale || opt.baseThreshold === undefined || !opt.method) return opt;
-            const { grid, fillRatio } = processPipelineFallback(opt.previewGrid!, opt.greyscale, opt.method, opt.baseThreshold, thresholdOffset);
+
+            let grid = opt.previewGrid!;
+            let fillRatio = opt.fillRatio || calculateFillRatio(grid);
+
+            if (thresholdOffset !== 0) {
+                const threshold = Math.max(0, Math.min(255, opt.baseThreshold + thresholdOffset));
+                const blurred = applyBoxBlur(stretchContrast(opt.greyscale), 1);
+                grid = applyThreshold(blurred, threshold);
+                grid = morphologicalCleanup(grid);
+                grid = removeSmallIslands(grid, 3);
+                fillRatio = calculateFillRatio(grid);
+            }
 
             let warning = '';
             if (fillRatio < 0.15) warning = 'Very few filled cells — try a larger grid';
