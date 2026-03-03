@@ -105,6 +105,33 @@ body {
   /* Increased from 2px for better contrast */
 }
 
+/* Progressive Reveal Hints */
+.gcell.hint-glow {
+  background-color: rgba(255, 200, 50, 0.25);
+  animation: fadeHint 2s ease-out forwards;
+}
+
+.gcell.hint-cool {
+  background-color: rgba(150, 180, 255, 0.15);
+  animation: fadeHint 2s ease-out forwards;
+}
+
+@keyframes fadeHint {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Logical Hint Highlight */
+.gcell.hint-hl {
+  box-shadow: inset 0 0 0 2px var(--sun);
+  background: rgba(249, 199, 79, 0.2);
+}
+
 /* Cell States */
 .gcell.filled {
   background: var(--filled) !important;

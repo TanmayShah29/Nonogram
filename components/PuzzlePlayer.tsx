@@ -6,11 +6,59 @@ import RevealAnimation from './RevealAnimation';
 import { PuzzleData } from '@/lib/puzzleEncoder';
 import { computeClues } from '@/lib/nonogram';
 
+// FUTURE FEATURES (do not implement yet):
+// 1. Multiplayer/collaborative solving — WebSockets, real-time
+// 2. Puzzle packs/collections — multiple puzzles one link
+// 3. Timed challenge mode — countdown timer, creator sets limit
+// 4. Puzzle comments/reactions — emoji reactions after solve
+// 5. Animated GIF support — each frame = one puzzle
+// 6. Custom cell shapes — circles, diamonds
+// 7. Sound pack selection — audio themes
+// 8. Puzzle history/profile page — creator stats
+
 interface PuzzlePlayerProps {
     puzzleData: PuzzleData;
     isCreatorMode?: boolean;
     onBack: () => void;
 }
+
+function findMostHelpfulRow(
+    playerGrid: number[][],
+    solution: number[][],
+    alreadyHinted: Set<number>
+): number {
+    let bestRow = -1;
+    let mostErrors = 0;
+
+    for (let r = 0; r < solution.length; r++) {
+        if (alreadyHinted.has(r)) continue;
+        let errors = 0;
+        let attempts = 0;
+        for (let c = 0; c < solution[r].length; c++) {
+            if (playerGrid[r][c] !== 0) attempts++;
+            if (playerGrid[r][c] !== solution[r][c]) errors++;
+        }
+        const score = attempts > 0 ? errors * 2 : errors;
+        if (score > mostErrors) {
+            mostErrors = score;
+            bestRow = r;
+        }
+    }
+
+    if (bestRow === -1) {
+        let mostFilled = 0;
+        for (let r = 0; r < solution.length; r++) {
+            if (alreadyHinted.has(r)) continue;
+            const filled = solution[r].filter(c => c === 1).length;
+            if (filled > mostFilled) {
+                mostFilled = filled;
+                bestRow = r;
+            }
+        }
+    }
+    return bestRow;
+}
+
 
 const safeSave = (key: string, value: string) => {
     try {
@@ -42,13 +90,18 @@ export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: Puzz
     const [clueDoneRows, setClueDoneRows] = useState<boolean[]>(Array(rows).fill(false));
     const [clueDoneCols, setClueDoneCols] = useState<boolean[]>(Array(cols).fill(false));
 
-    // Hints
-    const [hintsLeft, setHintsLeft] = useState(3);
-    const [hintCell, setHintCell] = useState<{ type: 'row' | 'col', index: number } | null>(null);
-
     // Status
+    const [playState, setPlayState] = useState<'preview' | 'playing'>('preview');
+    const [solveCount, setSolveCount] = useState(0);
     const [toastMsg, setToastMsg] = useState('');
     const [progress, setProgress] = useState(0);
+
+    // Hints
+    const [hintCell, setHintCell] = useState<{ type: 'row' | 'col', index: number } | null>(null);
+    const [hintedRows, setHintedRows] = useState<Set<number>>(new Set());
+    const [nextHintAt, setNextHintAt] = useState(5 * 60);
+    const [manualHintsUsed, setManualHintsUsed] = useState(0);
+    const hintTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     // Win / Reveal State
     const [isRevealed, setIsRevealed] = useState(false);
@@ -73,6 +126,7 @@ export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: Puzz
             if (saved) {
                 setShowRestorePrompt(true);
             }
+            setSolveCount(parseInt(localStorage.getItem(`revelio_solves_${id}`) || '0', 10));
         }
 
         // Setup Audio Context interaction listener
@@ -105,6 +159,8 @@ export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: Puzz
                     setPlayerGrid(parsed.grid);
                     if (parsed.time) setTimerSec(parsed.time);
                     if (parsed.tool) setActiveTool(parsed.tool);
+                    if (parsed.hintedRows) setHintedRows(new Set(parsed.hintedRows));
+                    if (parsed.nextHintAt) setNextHintAt(parsed.nextHintAt);
                 } else if (Array.isArray(parsed)) {
                     // Legacy support
                     setPlayerGrid(parsed);
@@ -112,11 +168,13 @@ export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: Puzz
             } catch (e) { }
         }
         setShowRestorePrompt(false);
+        setPlayState('playing');
     };
 
     const handleSkipRestore = () => {
         safeRemove(`nono_${id}`);
         setShowRestorePrompt(false);
+        setPlayState('playing');
     };
 
     // Timer Interval
@@ -127,6 +185,18 @@ export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: Puzz
         }, 1000);
         return () => clearInterval(interval);
     }, [timerOn]);
+
+    // Auto Hint logic
+    useEffect(() => {
+        if (timerSec >= nextHintAt && !isRevealed && !isGivingUp && playState === 'playing') {
+            const bestRow = findMostHelpfulRow(playerGrid, answerGrid, hintedRows);
+            if (bestRow !== -1) {
+                setHintedRows(prev => new Set([...prev, bestRow]));
+                setNextHintAt(prev => prev + 5 * 60);
+                setToastMsg(`💡 A hint appeared in row ${bestRow + 1}...`);
+            }
+        }
+    }, [timerSec, nextHintAt, isRevealed, isGivingUp, playState]);
 
     // Validation Effect (runs whenever playerGrid changes)
     useEffect(() => {
@@ -190,6 +260,8 @@ export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: Puzz
                 grid: playerGrid,
                 time: timerSec,
                 tool: activeTool,
+                hintedRows: Array.from(hintedRows),
+                nextHintAt,
                 updatedAt: Date.now()
             };
             safeSave(`nono_${id}`, JSON.stringify(saveObj));
@@ -200,7 +272,11 @@ export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: Puzz
         if (win && atLeastOneFilled && !hasRevealed.current) {
             hasRevealed.current = true;
             setTimerOn(false);
-            if (id && !isCreatorMode) safeRemove(`nono_${id}`);
+            if (id && !isCreatorMode) {
+                safeRemove(`nono_${id}`);
+                const prevSolves = parseInt(localStorage.getItem(`revelio_solves_${id}`) || '0', 10);
+                safeSave(`revelio_solves_${id}`, String(prevSolves + 1));
+            }
 
             if (isCreatorMode) {
                 sessionStorage.setItem('revelio_playtested', 'true');
@@ -252,34 +328,40 @@ export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: Puzz
         setUndoStack(newStack);
     };
 
-    const handleHint = () => {
-        if (hintsLeft <= 0) return;
-        // find a cell
-        let found = null;
-        for (let r = 0; r < rows; r++) {
-            if (found) break;
-            const det = getDeterminableCells(cols, rowClues[r]);
-            for (const c of det) {
-                const tv = answerGrid[r][c] === 1 ? 1 : 2;
-                if (tv === 1 && playerGrid[r][c] !== 1) { found = { type: 'row', index: r }; break; }
-            }
-        }
-        for (let c = 0; c < cols; c++) {
-            if (found) break;
-            const det = getDeterminableCells(rows, colClues[c]);
-            for (const r of det) {
-                const tv = answerGrid[r][c] === 1 ? 1 : 2;
-                if (tv === 1 && playerGrid[r][c] !== 1) { found = { type: 'col', index: c }; break; }
-            }
-        }
-
-        if (found) {
-            setHintsLeft(h => h - 1);
-            setHintCell(found as { type: 'row' | 'col', index: number });
-            setTimeout(() => setHintCell(null), 1500);
+    const forceHint = () => {
+        if (manualHintsUsed >= 3 && !isCreatorMode) return;
+        const bestRow = findMostHelpfulRow(playerGrid, answerGrid, hintedRows);
+        if (bestRow !== -1) {
+            setHintedRows(prev => new Set([...prev, bestRow]));
+            if (!isCreatorMode) setManualHintsUsed(h => h + 1);
+            setToastMsg(`💡 Forced hint appeared in row ${bestRow + 1}...`);
         } else {
-            setToastMsg('No simple logical hints available right now!');
+            setToastMsg('No useful hints available right now!');
         }
+    };
+
+    const handleHintPointerDown = () => {
+        if (manualHintsUsed >= 3 && !isCreatorMode) return;
+        hintTimeoutRef.current = setTimeout(() => {
+            hintTimeoutRef.current = null;
+            forceHint();
+        }, 500);
+    };
+
+    const handleHintPointerUp = () => {
+        if (hintTimeoutRef.current) {
+            clearTimeout(hintTimeoutRef.current);
+            hintTimeoutRef.current = null;
+        }
+    };
+
+    const handleHintClick = () => {
+        if (!hintTimeoutRef.current && (isCreatorMode || manualHintsUsed > 0)) return; // long press fired
+        if (manualHintsUsed >= 3 && !isCreatorMode) return;
+        const remaining = nextHintAt - timerSec;
+        const m = Math.floor(remaining / 60);
+        const s = String(remaining % 60).padStart(2, '0');
+        setToastMsg(`Next auto-hint in ${m}:${s} (Long press to force!)`);
     };
 
     const handleCheck = () => {
@@ -346,6 +428,70 @@ export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: Puzz
         }, 3000);
     };
 
+    if (playState === 'preview') {
+        const diffLabel = ['Easy', 'Medium', 'Hard', 'Expert'][puzzleData.diffIdx || 0] || 'Medium';
+        const diffColor = ['#4caf88', '#f9c74f', '#f4845f', '#e84747'][puzzleData.diffIdx || 0] || '#f9c74f';
+        let estTime = '~5 min';
+        if (isCreatorMode && sessionStorage.getItem('revelio_solve_time')) {
+            estTime = `${sessionStorage.getItem('revelio_solve_time')} (creator)`;
+        } else {
+            estTime = ['~2 min', '~5 min', '~12 min', '~25 min'][puzzleData.diffIdx || 0] || '~5 min';
+        }
+
+        let solveText = "Be the first to solve it!";
+        if (solveCount === 1) solveText = "1 person has solved this";
+        else if (solveCount > 1 && solveCount < 10) solveText = `${solveCount} people have solved this`;
+        else if (solveCount >= 10) solveText = `🔥 ${solveCount} people have solved this`;
+
+        return (
+            <div className="flex flex-col h-full bg-[#faf7f2] fixed inset-0 z-[100] items-center justify-center p-6 text-center animate-in fade-in duration-300">
+                <div className="max-w-[340px] w-full flex flex-col items-center gap-4">
+                    <h1 className="font-serif italic font-medium text-[24px] text-text mb-2">Revelio 🧩</h1>
+
+                    <div className="w-full aspect-[4/3] rounded-[16px] overflow-hidden shadow-sm mb-2 bg-[#eae5db] border-[4px] border-white relative">
+                        <div
+                            className="absolute inset-[-10px] bg-cover bg-center"
+                            style={{
+                                backgroundImage: `url(${puzzleData.thumb})`,
+                                filter: 'blur(14px) brightness(1.05)',
+                                transform: 'scale(1.08)'
+                            }}
+                        />
+                    </div>
+
+                    <h2 className="font-serif italic text-[22px] text-text">"{puzzleData.title}"</h2>
+
+                    <div className="flex items-center justify-center gap-3 w-full mt-2">
+                        <div className="bg-white border border-bdr rounded-[8px] px-3 py-2 flex flex-col items-center shadow-sm w-1/3">
+                            <span className="font-mono text-[14px] font-bold text-text">{cols}×{rows}</span>
+                            <span className="font-sans text-[10px] uppercase text-muted mt-1 tracking-widest">Grid</span>
+                        </div>
+                        <div className="bg-white border border-bdr rounded-[8px] px-3 py-2 flex flex-col items-center shadow-sm w-1/3" style={{ borderBottom: `3px solid ${diffColor}` }}>
+                            <span className="font-mono text-[14px] font-bold text-text" style={{ color: diffColor }}>{diffLabel}</span>
+                            <span className="font-sans text-[10px] uppercase text-muted mt-1 tracking-widest">Diff</span>
+                        </div>
+                        <div className="bg-white border border-bdr rounded-[8px] px-3 py-2 flex flex-col items-center shadow-sm w-1/3">
+                            <span className="font-mono text-[14px] font-bold text-text">{estTime}</span>
+                            <span className="font-sans text-[10px] uppercase text-muted mt-1 tracking-widest">Time</span>
+                        </div>
+                    </div>
+
+                    <div className="text-[14px] text-body mt-4 mb-2 font-sans font-medium">
+                        {solveText}
+                    </div>
+
+                    <Button variant="terra" size="full" className="h-[56px] rounded-[12px] text-[18px] font-serif italic mt-2" onClick={() => setPlayState('playing')}>
+                        Solve the puzzle →
+                    </Button>
+
+                    <p className="text-[13px] text-muted italic mt-4 max-w-[240px]">
+                        Can you solve it and reveal the hidden photo?
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col h-full bg-[#faf7f2] fixed inset-0 z-[100]">
             {isCreatorMode && (
@@ -382,11 +528,14 @@ export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: Puzz
 
                 <div className="flex items-center gap-2 order-4">
                     <button
-                        onClick={handleHint}
-                        disabled={hintsLeft === 0}
-                        className="font-mono text-[12px] bg-white border border-solid border-bdr text-body px-3 py-1.5 rounded-full cursor-pointer hover:border-terra disabled:opacity-50"
+                        onPointerDown={handleHintPointerDown}
+                        onPointerUp={handleHintPointerUp}
+                        onPointerLeave={handleHintPointerUp}
+                        onClick={handleHintClick}
+                        disabled={!isCreatorMode && manualHintsUsed >= 3}
+                        className="font-mono text-[12px] bg-white border border-solid border-bdr text-body px-3 py-1.5 rounded-full cursor-pointer hover:border-terra disabled:opacity-50 select-none touch-none"
                     >
-                        💡 {hintsLeft}
+                        💡 {isCreatorMode || manualHintsUsed < 3 ? (isCreatorMode ? 'Hint' : `${3 - manualHintsUsed} Hints`) : 'No hints'}
                     </button>
                     <button
                         onClick={handleCheck}
@@ -425,6 +574,7 @@ export default function PuzzlePlayer({ puzzleData, isCreatorMode, onBack }: Puzz
                 clueDoneCols={clueDoneCols}
                 isRevealed={isRevealed}
                 hintCell={hintCell}
+                hintedRows={hintedRows}
             />
 
             {/* Mobile Toolbar Overlay */}

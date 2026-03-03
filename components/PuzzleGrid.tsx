@@ -14,9 +14,10 @@ interface PuzzleGridProps {
     isRevealed: boolean;
     answerGrid: number[][];
     hintCell?: { type: 'row' | 'col', index: number } | null;
+    hintedRows?: Set<number>;
 }
 
-export default function PuzzleGrid({ puzzleData, playerGrid, activeTool, onApplyCell, onDragEnd, clueDoneRows, clueDoneCols, isRevealed, hintCell, answerGrid }: PuzzleGridProps) {
+export default function PuzzleGrid({ puzzleData, playerGrid, activeTool, onApplyCell, onDragEnd, clueDoneRows, clueDoneCols, isRevealed, hintCell, answerGrid, hintedRows }: PuzzleGridProps) {
     const { rows, cols, rowClues, colClues } = puzzleData;
     const wrapRef = useRef<HTMLDivElement>(null);
     const [currentZoom, setCurrentZoom] = useState<number>(1);
@@ -303,6 +304,14 @@ export default function PuzzleGrid({ puzzleData, playerGrid, activeTool, onApply
                             if (v === 1) classes += 'filled ';
                             else if (v === 2) classes += 'crossed ';
                             else if (v === 3) classes += 'noted ';
+
+                            if (hintCell && hintCell.type === 'row' && hintCell.index === r) classes += 'hint-hl ';
+                            if (hintCell && hintCell.type === 'col' && hintCell.index === c) classes += 'hint-hl ';
+
+                            if (hintedRows && hintedRows.has(r) && !isRevealed) {
+                                if (isCorrect) classes += 'hint-glow ';
+                                else classes += 'hint-cool ';
+                            }
 
                             // Give up feedback classes
                             if (isRevealed) {

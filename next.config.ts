@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+
+  turbopack: {
+    root: process.cwd(),
+  },
   // Compress responses
   compress: true,
   // Power header
