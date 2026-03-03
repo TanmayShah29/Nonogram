@@ -43,8 +43,6 @@ export default function PuzzleGrid({ puzzleData, playerGrid, activeTool, onApply
         const calculateDimensions = () => {
             if (!wrapRef.current || !wrapRef.current.parentElement) return;
             const scrollEl = wrapRef.current.parentElement;
-            const avW = (scrollEl.clientWidth || 350) - 24;
-            const avH = (scrollEl.clientHeight || 500) - 24;
 
             const maxRowNums = Math.max(...rowClues.map(r => r.length));
             const maxColNums = Math.max(...colClues.map(c => c.length));
@@ -53,8 +51,13 @@ export default function PuzzleGrid({ puzzleData, playerGrid, activeTool, onApply
             const clueAreaW = maxRowNums * CLUE_NUM_W + 8;
             const clueAreaH = maxColNums * 18 + 4;
 
-            const cellByW = Math.floor((avW - clueAreaW) / cols);
-            const cellByH = Math.floor((avH - clueAreaH) / rows);
+            const availableWidth = scrollEl.getBoundingClientRect().width - 32; // 16px padding * 2
+            const TOOLBAR_HEIGHT = 80;
+            const TOP_BAR_HEIGHT = 60;
+            const availableHeight = window.innerHeight - TOOLBAR_HEIGHT - TOP_BAR_HEIGHT - 32;
+
+            const cellByW = Math.floor((availableWidth - clueAreaW) / cols);
+            const cellByH = Math.floor((availableHeight - clueAreaH) / rows);
             const CS = Math.max(18, Math.min(38, cellByW, cellByH)); // cell size
             const CLW = Math.max(CLUE_NUM_W, CS);
             const clueFontSize = Math.max(8, Math.min(11, Math.floor(CLW * 0.5)));
@@ -177,7 +180,11 @@ export default function PuzzleGrid({ puzzleData, playerGrid, activeTool, onApply
     const maxD = Math.hypot(rows, cols);
 
     return (
-        <div className="flex-1 overflow-auto touch-pan-x touch-pan-y flex justify-center items-start p-[16px_16px_calc(100px+env(safe-area-inset-bottom,0px))]" id="puzzleScrollWrap">
+        <div
+            className="flex-1 overflow-visible w-full box-border touch-pan-x touch-pan-y flex justify-center items-start p-[16px_16px_calc(100px+env(safe-area-inset-bottom,0px))]"
+            id="puzzleScrollWrap"
+            style={{ width: '100%', boxSizing: 'border-box', overflow: 'visible' }}
+        >
             <div
                 ref={wrapRef}
                 className={`bg-white p-0 inline-block origin-top-left border-[3px] border-[#b0a89e] shadow-[0_8px_32px_rgba(0,0,0,0.12)] ${isDragging.current ? 'touch-none' : ''}`}

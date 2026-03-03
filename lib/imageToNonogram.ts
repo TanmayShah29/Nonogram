@@ -603,6 +603,43 @@ export function updateBestPick(options: GridOption[]): GridOption[] {
     return options.map((opt, i) => ({ ...opt, isBestPick: i === bestIdx }))
 }
 
+export function downsampleBinaryMask(
+    mask: number[][],
+    srcW: number,
+    srcH: number,
+    targetCols: number,
+    targetRows: number
+): number[][] {
+    const result: number[][] = []
+
+    for (let row = 0; row < targetRows; row++) {
+        result[row] = []
+        const y0 = Math.floor((row / targetRows) * srcH)
+        const y1 = Math.floor(((row + 1) / targetRows) * srcH)
+
+        for (let col = 0; col < targetCols; col++) {
+            const x0 = Math.floor((col / targetCols) * srcW)
+            const x1 = Math.floor(((col + 1) / targetCols) * srcW)
+
+            let subjectCount = 0
+            let total = 0
+
+            for (let py = y0; py < y1; py++) {
+                for (let px = x0; px < x1; px++) {
+                    if (py < mask.length && px < mask[0].length) {
+                        subjectCount += mask[py][px]
+                        total++
+                    }
+                }
+            }
+
+            result[row][col] = total > 0 && (subjectCount / total) > 0.5 ? 1 : 0
+        }
+    }
+
+    return result
+}
+
 export async function processImage(
     file: File,
     gridOption: GridOption
@@ -625,24 +662,52 @@ export async function processImage(
     ctx.fillRect(0, 0, canvasW, canvasH)
     drawImageWithOrientation(ctx, img, orientation, canvasW, canvasH)
 
-    const imageData = ctx.getImageData(0, 0, canvasW, canvasH)
-    const pixels = imageData.data
-
-    const greyscale = downsampleGreyscale(pixels, canvasW, canvasH, targetCols, targetRows)
-
-    // Core pipeline
-    let { grid, fillRatio, baseThreshold } = smartThreshold(greyscale)
-    let threshold = baseThreshold
-
-    // Apply manual slider offset if user adjusted it
-    if (thresholdOffset !== 0) {
-        threshold = Math.max(0, Math.min(255, baseThreshold + thresholdOffset))
-        const blurred = applyBoxBlur(stretchContrast(greyscale), 1)
-        grid = applyThreshold(blurred, threshold)
-        grid = morphologicalCleanup(grid)
-        grid = removeSmallIslands(grid, 3)
-        fillRatio = calculateFillRatio(grid)
+    let segmentationMask: number[][] | null = null
+    try {
+        const { segmentSubject } = await import('./segmentation')
+        segmentationMask = await segmentSubject(canvas)
+    } catch {
+        // segmentation not available, fall through
     }
+
+    let grid: number[][]
+    let method = 'otsu'
+    let fillRatio = 0
+    let threshold = 0
+
+    if (segmentationMask && thresholdOffset === 0) {
+        grid = downsampleBinaryMask(segmentationMask, canvasW, canvasH, targetCols, targetRows)
+        method = 'ai-segmentation'
+        fillRatio = calculateFillRatio(grid)
+
+        // Sanity check
+        if (fillRatio < 0.05 || fillRatio > 0.90) {
+            segmentationMask = null
+        }
+    }
+
+    if (!segmentationMask || thresholdOffset !== 0) {
+        const imageData = ctx.getImageData(0, 0, canvasW, canvasH)
+        const pixels = imageData.data
+        const greyscale = downsampleGreyscale(pixels, canvasW, canvasH, targetCols, targetRows)
+
+        const result = smartThreshold(greyscale)
+        grid = result.grid
+        method = result.method
+        let baseThreshold = result.baseThreshold
+        threshold = baseThreshold
+
+        if (thresholdOffset !== 0) {
+            threshold = Math.max(0, Math.min(255, baseThreshold + thresholdOffset))
+            const blurred = applyBoxBlur(stretchContrast(greyscale), 1)
+            grid = applyThreshold(blurred, threshold)
+            method = 'manual-threshold'
+        }
+    }
+
+    grid = morphologicalCleanup(grid!)
+    grid = removeSmallIslands(grid, 3)
+    fillRatio = calculateFillRatio(grid)
 
     if (fillRatio < 0.15) warnings.push('Very few filled cells — try a darker photo or larger grid')
     if (fillRatio > 0.85) warnings.push('Almost entirely filled — try a lighter photo or smaller grid')
@@ -684,11 +749,40 @@ export async function generatePreview(
     ctx.fillRect(0, 0, canvasW, canvasH)
     drawImageWithOrientation(ctx, img, orientation, canvasW, canvasH)
 
+    let segmentationMask: number[][] | null = null
+    try {
+        const { segmentSubject } = await import('./segmentation')
+        segmentationMask = await segmentSubject(canvas)
+    } catch {
+    }
+
+    let grid: number[][]
+    let method: string
+
+    if (segmentationMask) {
+        grid = downsampleBinaryMask(segmentationMask, canvasW, canvasH, cols, rows)
+        method = 'ai-segmentation'
+        const fillScale = calculateFillRatio(grid)
+        if (fillScale < 0.05 || fillScale > 0.90) {
+            segmentationMask = null
+        }
+    }
+
     const pixels = ctx.getImageData(0, 0, canvasW, canvasH).data
     const greyscale = downsampleGreyscale(pixels, canvasW, canvasH, cols, rows)
-    const { grid, fillRatio, method, baseThreshold, imageType, dofDetected } = smartThreshold(greyscale)
+    const otsuResult = smartThreshold(greyscale)
 
-    return { grid, fillRatio, greyscale, baseThreshold, method, imageType, dofDetected, debugMetrics: {} }
+    if (!segmentationMask) {
+        grid = otsuResult.grid
+        method = otsuResult.method
+    }
+
+    let fillRatio = calculateFillRatio(grid!)
+    grid = morphologicalCleanup(grid!)
+    grid = removeSmallIslands(grid, 3)
+    fillRatio = calculateFillRatio(grid)
+
+    return { grid, fillRatio, greyscale, baseThreshold: otsuResult.baseThreshold, method: method!, imageType: 'auto', dofDetected: false, debugMetrics: {} }
 }
 
 // ─────────────────────────────────────────────

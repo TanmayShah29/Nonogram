@@ -21,6 +21,7 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
     const [options, setOptions] = useState<LocalGridOption[]>([]);
     const [selectedIdx, setSelectedIdx] = useState<number>(2);
     const [isGenerating, setIsGenerating] = useState<boolean>(false);
+    const [loadingMessage, setLoadingMessage] = useState<string>('');
     const [previewSrc, setPreviewSrc] = useState<string>('');
     const puzzlePreviewCanvasRef = useRef<HTMLCanvasElement>(null);
     const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -122,6 +123,8 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
 
         cv.width = cellSize * opt.cols;
         cv.height = cellSize * opt.rows;
+        cv.style.width = `${cv.width}px`;
+        cv.style.height = `${cv.height}px`;
 
         renderGridToCanvas(cv, opt.previewGrid, opt.cols, opt.rows, cellSize);
     };
@@ -153,7 +156,11 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
     // Generate click logic remains mostly unchanged, relies on `options[selectedIdx]` memory
     const handleGenerateClick = async () => {
         if (!uploadedFile) return;
+
+        const usingSegmentation = options[selectedIdx]?.method === 'ai-segmentation';
+        setLoadingMessage(usingSegmentation ? 'Detecting subject with AI...' : 'Processing image...');
         setIsGenerating(true);
+
         try {
             const opt = options[selectedIdx];
             const puzzle = await processImage(uploadedFile, opt);
@@ -183,6 +190,7 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
             alert("Failed to generate puzzle.");
         } finally {
             setIsGenerating(false);
+            setLoadingMessage('');
         }
     };
 
@@ -299,7 +307,7 @@ export default function GridPicker({ onBack, onComplete }: GridPickerProps) {
                     onClick={handleGenerateClick}
                     disabled={isGenerating || options.length === 0}
                 >
-                    {isGenerating ? 'Creating… ✨' : 'Create Puzzle →'}
+                    {isGenerating ? (loadingMessage || 'Creating… ✨') : 'Create Puzzle →'}
                 </Button>
             </div>
         </div>
