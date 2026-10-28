@@ -2,7 +2,7 @@
 
 > Turn any photo into a nonogram puzzle. Share it with friends. Let them solve it to reveal the hidden photo.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=YOUR_GITHUB_REPO_URL&env=NEXT_PUBLIC_BASE_URL&envDescription=Your%20deployed%20app%20URL%2C%20e.g.%20https%3A%2F%2Frevelio.vercel.app)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTanmayShah29%2FNonogram&env=NEXT_PUBLIC_BASE_URL&envDescription=Your%20deployed%20app%20URL%2C%20e.g.%20https%3A%2F%2Fnonogram-seven.vercel.app)
 
 ---
 
